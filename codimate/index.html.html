@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>코디메이트 - AI 패션 스타일리스트</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans KR', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            primary: {
+              50: '#fef7ee',
+              100: '#fdedd3',
+              200: '#fad7a5',
+              300: '#f6bc6d',
+              400: '#f19a3e',
+              500: '#ed7d1a',
+              600: '#de6210',
+              700: '#b84a10',
+              800: '#933b15',
+              900: '#773314',
+            },
+            surface: {
+              50: '#fafaf9',
+              100: '#f5f5f4',
+              200: '#e7e5e4',
+              800: '#292524',
+              900: '#1c1917',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: linear-gradient(180deg, #1c1917 0%, #292524 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .weather-glow {
+      background: radial-gradient(ellipse at center, rgba(241, 154, 62, 0.15) 0%, transparent 70%);
+    }
+    .outfit-item {
+      background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .outfit-item:hover {
+      border-color: rgba(241, 154, 62, 0.3);
+      transform: translateX(4px);
+    }
+    .nav-item { transition: all 0.2s ease; }
+    .nav-item.active { color: #f19a3e; }
+    .btn-primary {
+      background: linear-gradient(135deg, #f19a3e 0%, #ed7d1a 100%);
+      box-shadow: 0 4px 20px rgba(241, 154, 62, 0.3);
+      transition: all 0.3s ease;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 6px 30px rgba(241, 154, 62, 0.4);
+      transform: translateY(-2px);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.3s ease;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+    .style-chip.selected {
+      background: linear-gradient(135deg, #f19a3e 0%, #ed7d1a 100%);
+      border-color: transparent;
+      color: white;
+    }
+    .progress-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+    }
+    .progress-dot.active {
+      background: #f19a3e;
+      width: 24px;
+      border-radius: 4px;
+    }
+    .progress-dot.completed { background: #f19a3e; }
+    .loading-spinner {
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #f19a3e;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fadeIn 0.4s ease forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // Gemini API 설정
+    const GEMINI_API_KEY = 'AIzaSyAb8Wq-Eh7rzAk3ZsVpvJiL5ZXq_DTnuiU';
+    const GEMINI_TEXT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+    
+    // 이미지 생성 모델들 (순서대로 시도)
+    const IMAGE_MODELS = [
+      'gemini-2.0-flash-preview-image-generation',
+      'gemini-2.5-flash-image-preview', 
+      'gemini-2.5-flash-image',
+      'imagen-3.0-generate-002'
+    ];
+
+    // 목업 날씨 데이터
+    const mockWeatherData = {
+      location: '대구',
+      temperature: 3,
+      tempMax: 12,
+      tempMin: -2,
+      condition: '맑음',
+      humidity: 45,
+      wind: 3.2,
+      icon: '☀️',
+      description: '일교차가 큰 맑은 날씨'
+    };
+
+    // 아이콘 컴포넌트들
+    const HomeIcon = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+      </svg>
+    );
+    const ClosetIcon = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="12" y1="3" x2="12" y2="21"></line>
+      </svg>
+    );
+    const TrendIcon = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+        <polyline points="17 6 23 6 23 12"></polyline>
+      </svg>
+    );
+    const ProfileIcon = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+      </svg>
+    );
+    const RefreshIcon = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+    );
+    const CartIcon = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="9" cy="21" r="1"></circle>
+        <circle cx="20" cy="21" r="1"></circle>
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+      </svg>
+    );
+    const ChevronIcon = () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    );
+
+    // 온보딩 화면
+    function OnboardingScreen({ onComplete }) {
+      const [step, setStep] = useState(0);
+      const [profile, setProfile] = useState({ gender: '', ageGroup: '', styles: [] });
+
+      const styleOptions = [
+        { id: 'minimal', label: '미니멀', emoji: '◻️' },
+        { id: 'casual', label: '캐주얼', emoji: '👕' },
+        { id: 'street', label: '스트릿', emoji: '🧢' },
+        { id: 'formal', label: '포멀', emoji: '👔' },
+        { id: 'sporty', label: '스포티', emoji: '🏃' },
+        { id: 'romantic', label: '로맨틱', emoji: '🌸' },
+        { id: 'vintage', label: '빈티지', emoji: '📻' },
+        { id: 'modern', label: '모던', emoji: '🏛️' }
+      ];
+
+      const handleStyleToggle = (styleId) => {
+        setProfile(prev => ({
+          ...prev,
+          styles: prev.styles.includes(styleId)
+            ? prev.styles.filter(s => s !== styleId)
+            : [...prev.styles, styleId]
+        }));
+      };
+
+      const canProceed = () => {
+        if (step === 0) return true;
+        if (step === 1) return profile.gender !== '';
+        if (step === 2) return profile.ageGroup !== '';
+        if (step === 3) return profile.styles.length > 0;
+        return false;
+      };
+
+      const handleNext = () => {
+        if (step < 3) setStep(step + 1);
+        else onComplete(profile);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col px-6 py-8">
+          <div className="flex justify-center gap-2 mb-12">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`progress-dot ${i === step ? 'active' : i < step ? 'completed' : ''}`} />
+            ))}
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center">
+            {step === 0 && (
+              <div className="text-center animate-fade-in">
+                <div className="text-6xl mb-6">👔</div>
+                <h1 className="font-display text-3xl font-bold text-white mb-4">코디메이트</h1>
+                <p className="text-gray-400 text-lg leading-relaxed">
+                  날씨와 트렌드를 분석해<br/>당신만의 완벽한 코디를 추천해드려요
+                </p>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="animate-fade-in">
+                <h2 className="text-2xl font-bold text-white mb-2 text-center">성별을 선택해주세요</h2>
+                <p className="text-gray-400 text-center mb-8">맞춤 스타일 추천을 위해 필요해요</p>
+                <div className="flex gap-4 justify-center">
+                  {[{ id: 'male', label: '남성', emoji: '👨' }, { id: 'female', label: '여성', emoji: '👩' }].map(option => (
+                    <button
+                      key={option.id}
+                      onClick={() => setProfile(prev => ({ ...prev, gender: option.id }))}
+                      className={`flex-1 max-w-[140px] py-6 rounded-2xl border-2 transition-all ${
+                        profile.gender === option.id
+                          ? 'border-primary-500 bg-primary-500/10'
+                          : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="text-4xl mb-2">{option.emoji}</div>
+                      <div className="text-white font-medium">{option.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="animate-fade-in">
+                <h2 className="text-2xl font-bold text-white mb-2 text-center">나이대를 선택해주세요</h2>
+                <p className="text-gray-400 text-center mb-8">연령에 맞는 스타일을 추천해드려요</p>
+                <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto">
+                  {['10대', '20대', '30대', '40대', '50대 이상'].map(age => (
+                    <button
+                      key={age}
+                      onClick={() => setProfile(prev => ({ ...prev, ageGroup: age }))}
+                      className={`py-4 rounded-xl border-2 transition-all ${
+                        profile.ageGroup === age
+                          ? 'border-primary-500 bg-primary-500/10 text-white'
+                          : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      {age}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="animate-fade-in">
+                <h2 className="text-2xl font-bold text-white mb-2 text-center">선호하는 스타일은?</h2>
+                <p className="text-gray-400 text-center mb-8">여러 개 선택할 수 있어요</p>
+                <div className="flex flex-wrap gap-3 justify-center max-w-sm mx-auto">
+                  {styleOptions.map(style => (
+                    <button
+                      key={style.id}
+                      onClick={() => handleStyleToggle(style.id)}
+                      className={`style-chip px-4 py-3 rounded-full border-2 flex items-center gap-2 transition-all ${
+                        profile.styles.includes(style.id)
+                          ? 'selected'
+                          : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      <span>{style.emoji}</span>
+                      <span>{style.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8">
+            <button
+              onClick={handleNext}
+              disabled={!canProceed()}
+              className={`w-full py-4 rounded-2xl font-semibold text-white transition-all ${
+                canProceed() ? 'btn-primary' : 'bg-gray-700 opacity-50 cursor-not-allowed'
+              }`}
+            >
+              {step === 3 ? '시작하기' : '다음'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // 날씨 카드
+    function WeatherCard({ weather }) {
+      return (
+        <div className="glass-card rounded-2xl p-5 mb-6 relative overflow-hidden">
+          <div className="weather-glow absolute inset-0 pointer-events-none" />
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-primary-400">📍</span>
+                <span className="text-white font-medium">{weather.location}</span>
+              </div>
+              <span className="text-gray-400 text-sm">오늘</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-5xl font-display font-bold text-white">{weather.temperature}</span>
+                  <span className="text-2xl text-gray-400">°C</span>
+                </div>
+                <div className="text-gray-400 text-sm mt-1">
+                  {weather.tempMin}° / {weather.tempMax}° 일교차 {weather.tempMax - weather.tempMin}°
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-5xl mb-1">{weather.icon}</div>
+                <div className="text-gray-300 text-sm">{weather.condition}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // 코디 아이템
+    function OutfitItem({ item, index }) {
+      const categoryEmoji = {
+        '상의': '👕', '하의': '👖', '아우터': '🧥',
+        '양말': '🧦', '신발': '👟', '소품': '👜'
+      };
+      return (
+        <div className="outfit-item rounded-xl p-4 animate-fade-in" style={{ animationDelay: `${index * 0.1}s` }}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center text-2xl">
+              {categoryEmoji[item.category] || '👔'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-primary-400 font-medium mb-1">{item.category}</div>
+              <div className="text-white font-medium truncate">{item.name}</div>
+              {item.detail && <div className="text-gray-500 text-sm truncate">{item.detail}</div>}
+            </div>
+            <div className="text-gray-500"><ChevronIcon /></div>
+          </div>
+        </div>
+      );
+    }
+
+    // 로딩
+    function LoadingScreen({ message }) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="loading-spinner mb-4"></div>
+          <p className="text-gray-400">{message || 'AI가 코디를 분석 중...'}</p>
+        </div>
+      );
+    }
+
+    // 메인 홈 화면
+    function HomeScreen({ profile, weather }) {
+      const [outfit, setOutfit] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [imageLoading, setImageLoading] = useState(false);
+      const [aiReason, setAiReason] = useState('');
+      const [outfitImage, setOutfitImage] = useState(null);
+      const [imageError, setImageError] = useState(null);
+      const [imageStatus, setImageStatus] = useState('');
+
+      // 이미지 생성 함수 - 여러 모델 시도
+      const generateOutfitImage = async (outfitItems, genderLabel, ageGroup, userStyles) => {
+        setImageLoading(true);
+        setOutfitImage(null);
+        setImageError(null);
+
+        const outfitDescription = outfitItems.map(item => 
+          `${item.category}: ${item.name} (${item.detail})`
+        ).join(', ');
+
+        const imagePrompt = `Create a high-quality fashion photography of a stylish ${genderLabel === '남성' ? 'Korean man' : 'Korean woman'} in their ${ageGroup}. 
+Full body shot, standing pose, modern urban background.
+The outfit consists of: ${outfitDescription}
+Style: ${userStyles} fashion, trendy 2025 Korean street style.
+Lighting: Natural daylight, soft shadows.
+Quality: Professional fashion magazine quality.
+Do NOT include any text or watermarks.`;
+
+        // 여러 모델을 순서대로 시도
+        for (const modelName of IMAGE_MODELS) {
+          setImageStatus(`${modelName} 시도 중...`);
+          console.log(`Trying model: ${modelName}`);
+
+          try {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+            
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: imagePrompt }] }],
+                generationConfig: {
+                  responseModalities: ["TEXT", "IMAGE"]
+                }
+              })
+            });
+
+            const data = await response.json();
+            console.log(`Response from ${modelName}:`, data);
+
+            if (!response.ok) {
+              console.log(`Model ${modelName} failed:`, data.error?.message || 'Unknown error');
+              continue; // 다음 모델 시도
+            }
+
+            // 응답에서 이미지 데이터 추출
+            if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+              const parts = data.candidates[0].content.parts;
+              for (const part of parts) {
+                if (part.inlineData) {
+                  const base64Image = part.inlineData.data;
+                  const mimeType = part.inlineData.mimeType || 'image/png';
+                  setOutfitImage(`data:${mimeType};base64,${base64Image}`);
+                  setImageStatus(`${modelName}로 생성 완료!`);
+                  setImageLoading(false);
+                  return; // 성공!
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Error with ${modelName}:`, err);
+            continue; // 다음 모델 시도
+          }
+        }
+
+        // 모든 모델 실패
+        setImageError('이미지 생성 API에 접근할 수 없습니다. API 키 권한을 확인해주세요.');
+        setImageStatus('');
+        setImageLoading(false);
+      };
+
+      const generateOutfit = async () => {
+        setLoading(true);
+        setOutfit(null);
+        setOutfitImage(null);
+        setImageError(null);
+
+        const styleLabels = {
+          minimal: '미니멀', casual: '캐주얼', street: '스트릿',
+          formal: '포멀', sporty: '스포티', romantic: '로맨틱',
+          vintage: '빈티지', modern: '모던'
+        };
+        const userStyles = profile.styles.map(s => styleLabels[s]).join(', ');
+        const genderLabel = profile.gender === 'male' ? '남성' : '여성';
+
+        const prompt = `당신은 전문 패션 스타일리스트입니다. 다음 조건에 맞는 오늘의 코디를 추천해주세요.
+
+조건:
+- 날씨: ${weather.condition}, 현재기온 ${weather.temperature}°C, 최저 ${weather.tempMin}°C, 최고 ${weather.tempMax}°C
+- 사용자: ${genderLabel}, ${profile.ageGroup}
+- 선호 스타일: ${userStyles}
+
+다음 JSON 형식으로만 답변해주세요. 다른 설명 없이 JSON만 출력하세요:
+{
+  "items": [
+    {"category": "상의", "name": "아이템명", "detail": "색상이나 소재 설명"},
+    {"category": "하의", "name": "아이템명", "detail": "색상이나 소재 설명"},
+    {"category": "아우터", "name": "아이템명", "detail": "색상이나 소재 설명"},
+    {"category": "양말", "name": "아이템명", "detail": "색상이나 소재 설명"},
+    {"category": "신발", "name": "아이템명", "detail": "색상이나 소재 설명"},
+    {"category": "소품", "name": "아이템명", "detail": "색상이나 소재 설명"}
+  ],
+  "reason": "이 코디를 추천하는 이유 (2-3문장)"
+}`;
+
+        try {
+          const response = await fetch(`${GEMINI_TEXT_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.9, maxOutputTokens: 1024 }
+            })
+          });
+
+          if (!response.ok) throw new Error('API 요청 실패');
+
+          const data = await response.json();
+          const text = data.candidates[0].content.parts[0].text;
+          
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            setOutfit(result.items);
+            setAiReason(result.reason);
+            setLoading(false);
+            
+            // 코디 추천 완료 후 이미지 생성 시작
+            generateOutfitImage(result.items, genderLabel, profile.ageGroup, userStyles);
+          } else {
+            throw new Error('응답 파싱 실패');
+          }
+        } catch (err) {
+          console.error('Error:', err);
+          const fallbackItems = [
+            { category: '상의', name: '화이트 옥스포드 셔츠', detail: '면 100%' },
+            { category: '하의', name: '네이비 치노 팬츠', detail: '슬림핏' },
+            { category: '아우터', name: '베이지 트렌치코트', detail: '미디엄 기장' },
+            { category: '양말', name: '차콜 무지 양말', detail: '중목' },
+            { category: '신발', name: '브라운 레더 로퍼', detail: '클래식' },
+            { category: '소품', name: '실버 미니멀 시계', detail: '메쉬 밴드' }
+          ];
+          setOutfit(fallbackItems);
+          setAiReason('일교차가 큰 날씨에 레이어드 스타일로 체온 조절이 용이합니다.');
+          setLoading(false);
+          generateOutfitImage(fallbackItems, genderLabel, profile.ageGroup, userStyles);
+        }
+      };
+
+      useEffect(() => { generateOutfit(); }, []);
+
+      return (
+        <div className="pb-24">
+          <WeatherCard weather={weather} />
+          
+          {/* AI 생성 코디 이미지 */}
+          <div className="mb-6">
+            <div className="glass-card rounded-2xl overflow-hidden">
+              {imageLoading ? (
+                <div className="aspect-[3/4] flex flex-col items-center justify-center bg-white/5">
+                  <div className="loading-spinner mb-4"></div>
+                  <p className="text-gray-400 text-sm">AI가 코디 이미지를 생성 중...</p>
+                  {imageStatus && <p className="text-primary-400 text-xs mt-2">{imageStatus}</p>}
+                </div>
+              ) : outfitImage ? (
+                <div className="relative">
+                  <img src={outfitImage} alt="AI 추천 코디" className="w-full aspect-[3/4] object-cover" />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                    <p className="text-white text-sm font-medium">AI가 추천하는 오늘의 코디</p>
+                    <p className="text-gray-300 text-xs mt-1">Gemini AI로 생성된 이미지</p>
+                  </div>
+                </div>
+              ) : imageError ? (
+                <div className="aspect-[3/4] flex flex-col items-center justify-center bg-white/5 p-6">
+                  <span className="text-5xl mb-4">⚠️</span>
+                  <p className="text-gray-400 text-sm text-center mb-2">이미지 생성 실패</p>
+                  <p className="text-gray-500 text-xs text-center mb-4">{imageError}</p>
+                  <button 
+                    onClick={() => {
+                      const styleLabels = { minimal: '미니멀', casual: '캐주얼', street: '스트릿', formal: '포멀', sporty: '스포티', romantic: '로맨틱', vintage: '빈티지', modern: '모던' };
+                      const userStyles = profile.styles.map(s => styleLabels[s]).join(', ');
+                      const genderLabel = profile.gender === 'male' ? '남성' : '여성';
+                      generateOutfitImage(outfit, genderLabel, profile.ageGroup, userStyles);
+                    }}
+                    className="px-4 py-2 text-sm text-primary-400 border border-primary-400/30 rounded-lg hover:bg-primary-400/10 transition-colors"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              ) : loading ? (
+                <div className="aspect-[3/4] flex flex-col items-center justify-center bg-white/5">
+                  <div className="loading-spinner mb-4"></div>
+                  <p className="text-gray-400 text-sm">AI가 코디를 분석 중...</p>
+                </div>
+              ) : (
+                <div className="aspect-[3/4] flex flex-col items-center justify-center bg-white/5">
+                  <span className="text-6xl mb-4">👔</span>
+                  <p className="text-gray-400 text-sm">이미지 생성 대기 중</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* 코디 추천 섹션 */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">오늘의 추천 코디</h2>
+              <button
+                onClick={generateOutfit}
+                disabled={loading || imageLoading}
+                className="flex items-center gap-2 text-primary-400 text-sm font-medium hover:text-primary-300 transition-colors disabled:opacity-50"
+              >
+                <RefreshIcon />
+                다른 스타일
+              </button>
+            </div>
+            
+            {loading ? (
+              <LoadingScreen />
+            ) : (
+              <div className="space-y-3">
+                {outfit && outfit.map((item, index) => (
+                  <OutfitItem key={index} item={item} index={index} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* AI 추천 이유 */}
+          {aiReason && !loading && (
+            <div className="glass-card rounded-xl p-4 mt-4 animate-fade-in">
+              <div className="flex gap-3">
+                <span className="text-xl">💡</span>
+                <p className="text-gray-300 text-sm leading-relaxed">{aiReason}</p>
+              </div>
+            </div>
+          )}
+
+          {/* 구매 버튼 */}
+          {!loading && (
+            <div className="mt-6">
+              <button className="w-full btn-primary py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2">
+                <CartIcon />
+                이 스타일 구매하기
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 내 옷장 화면
+    function ClosetScreen() {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="text-6xl mb-4">👕</div>
+          <h2 className="text-xl font-bold text-white mb-2">내 옷장</h2>
+          <p className="text-gray-400 mb-6">곧 업데이트 예정이에요!<br/>옷을 등록하고 AI 맞춤 추천을 받아보세요.</p>
+          <button className="btn-secondary px-6 py-3 rounded-xl text-white font-medium">알림 받기</button>
+        </div>
+      );
+    }
+
+    // 트렌드 화면
+    function TrendScreen() {
+      const trends = [
+        { tag: '#미니멀룩', desc: '깔끔한 라인의 베이직 아이템', hot: true },
+        { tag: '#레이어드', desc: '겹쳐입기로 스타일 완성', hot: true },
+        { tag: '#어스톤', desc: '자연에서 영감받은 컬러', hot: false },
+        { tag: '#오버핏', desc: '여유로운 실루엣', hot: false }
+      ];
+
+      return (
+        <div className="pb-24">
+          <h2 className="text-xl font-bold text-white mb-4">🔥 이번 주 트렌드</h2>
+          <div className="space-y-3">
+            {trends.map((trend, index) => (
+              <div key={index} className="glass-card rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-primary-400 font-semibold">{trend.tag}</span>
+                    {trend.hot && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">HOT</span>}
+                  </div>
+                  <p className="text-gray-400 text-sm">{trend.desc}</p>
+                </div>
+                <div className="text-gray-500"><ChevronIcon /></div>
+              </div>
+            ))}
+          </div>
+          <div className="glass-card rounded-xl p-6 mt-6 text-center">
+            <p className="text-gray-400">실시간 트렌드 분석 기능이<br/>곧 업데이트됩니다!</p>
+          </div>
+        </div>
+      );
+    }
+
+    // 프로필 화면
+    function ProfileScreen({ profile }) {
+      const styleLabels = {
+        minimal: '미니멀', casual: '캐주얼', street: '스트릿',
+        formal: '포멀', sporty: '스포티', romantic: '로맨틱',
+        vintage: '빈티지', modern: '모던'
+      };
+
+      return (
+        <div className="pb-24">
+          <div className="glass-card rounded-2xl p-6 mb-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-4xl mx-auto mb-4">
+              {profile.gender === 'male' ? '👨' : '👩'}
+            </div>
+            <h2 className="text-xl font-bold text-white mb-1">사용자님</h2>
+            <p className="text-gray-400">{profile.gender === 'male' ? '남성' : '여성'} · {profile.ageGroup}</p>
+          </div>
+
+          <div className="glass-card rounded-xl p-4 mb-4">
+            <div className="text-gray-400 text-sm mb-3">선호 스타일</div>
+            <div className="flex flex-wrap gap-2">
+              {profile.styles.map(style => (
+                <span key={style} className="px-3 py-1.5 rounded-full bg-primary-500/20 text-primary-400 text-sm">
+                  {styleLabels[style]}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass-card rounded-xl overflow-hidden">
+            {['프로필 수정', '알림 설정', '앱 정보', '피드백 보내기'].map((item, index) => (
+              <button
+                key={item}
+                className={`w-full px-4 py-4 flex items-center justify-between text-white hover:bg-white/5 transition-colors ${index !== 0 ? 'border-t border-white/5' : ''}`}
+              >
+                <span>{item}</span>
+                <ChevronIcon />
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // 하단 네비게이션
+    function BottomNav({ activeTab, onTabChange }) {
+      const tabs = [
+        { id: 'home', label: '홈', Icon: HomeIcon },
+        { id: 'closet', label: '옷장', Icon: ClosetIcon },
+        { id: 'trend', label: '트렌드', Icon: TrendIcon },
+        { id: 'profile', label: '프로필', Icon: ProfileIcon }
+      ];
+
+      return (
+        <nav className="fixed bottom-0 left-0 right-0 bg-surface-900/95 backdrop-blur-lg border-t border-white/5 px-2 py-2 z-50">
+          <div className="flex justify-around items-center max-w-lg mx-auto">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => onTabChange(tab.id)}
+                className={`nav-item relative flex flex-col items-center py-2 px-4 ${activeTab === tab.id ? 'active text-primary-400' : 'text-gray-500'}`}
+              >
+                <tab.Icon />
+                <span className="text-xs mt-1 font-medium">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      );
+    }
+
+    // 메인 앱
+    function App() {
+      const [isOnboarded, setIsOnboarded] = useState(false);
+      const [profile, setProfile] = useState(null);
+      const [activeTab, setActiveTab] = useState('home');
+
+      const handleOnboardingComplete = (userProfile) => {
+        setProfile(userProfile);
+        setIsOnboarded(true);
+      };
+
+      if (!isOnboarded) {
+        return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+      }
+
+      return (
+        <div className="min-h-screen max-w-lg mx-auto">
+          <header className="px-6 py-4 flex items-center justify-between">
+            <h1 className="font-display text-xl font-bold text-white">코디메이트</h1>
+            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+              <span className="text-sm">🔔</span>
+            </div>
+          </header>
+
+          <main className="px-6">
+            {activeTab === 'home' && <HomeScreen profile={profile} weather={mockWeatherData} />}
+            {activeTab === 'closet' && <ClosetScreen />}
+            {activeTab === 'trend' && <TrendScreen />}
+            {activeTab === 'profile' && <ProfileScreen profile={profile} />}
+          </main>
+
+          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
