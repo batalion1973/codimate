@@ -164,13 +164,20 @@ const generate=useCallback(async()=>{
   const userStyles=getStyles();
   const ageStyle=getAgeStyle(userAge);
   
-  // 랜덤 요소
-  const randIdx=Math.floor(Math.random()*trends.colors.length);
+  // 강화된 랜덤 요소 - 매번 다른 조합 생성
+  const timestamp=Date.now();
+  const randSeed=timestamp%1000;
+  const randIdx=(randSeed+Math.floor(Math.random()*100))%trends.colors.length;
   const mainColor=trends.colors[randIdx];
-  const subColor=trends.colors[(randIdx+1)%trends.colors.length];
-  const randItem=trends.items[Math.floor(Math.random()*trends.items.length)];
+  const subColor=trends.colors[(randIdx+2+Math.floor(Math.random()*3))%trends.colors.length];
+  const randItem=trends.items[(randSeed+Math.floor(Math.random()*100))%trends.items.length];
+  const styleVariation=Math.floor(Math.random()*3); // 0, 1, 2 중 하나 - 스타일 변형용
   
   setAiStatus(`${ageStyle.desc} 스타일 분석 중...`);
+  
+  // 스타일 변형 옵션
+  const styleOptions=['클래식하고 단정한','트렌디하고 캐주얼한','모던하고 세련된'];
+  const selectedStyleMood=styleOptions[styleVariation];
   
   // 연령대별 맞춤 프롬프트
   const prompt=`당신은 한국 패션 스타일리스트입니다.
@@ -180,6 +187,8 @@ const generate=useCallback(async()=>{
 선호 스타일: ${userStyles}
 시즌 트렌드: ${trends.keywords.join(', ')}
 추천 컬러: ${mainColor}, ${subColor}
+이번 스타일 무드: ${selectedStyleMood}
+랜덤 시드: ${randSeed} (매번 완전히 다른 조합 필요)
 
 연령대 특성:
 - ${ageStyle.desc}에게 어울리는 ${ageStyle.look} 스타일
@@ -231,89 +240,122 @@ JSON 형식으로만 응답:
     console.error('Generation error:',e);
   }
 
-  // 폴백 - 연령대별 차별화
+  // 폴백 - 연령대별 차별화 + 스타일 변형
   if(generationRef.current!==currentGen)return;
+  
+  // 아우터 변형 옵션 (날씨별)
+  const coldOuterOptions=[['롱 패딩','숏 패딩','푸퍼 자켓'],['울 코트','캐시미어 코트','무스탕'],['패딩 점퍼','플리스 자켓','퀼팅 자켓']];
+  const coolOuterOptions=[['항공점퍼','데님 자켓','블루종'],['블레이저','가디건','니트 자켓'],['트렌치코트','맥코트','체스터코트']];
   
   let fallback;
   if(feelsLike<0){
     // 한파
     if(userAge<20){
+      const outerChoice=coldOuterOptions[0][styleVariation];
+      const topOptions=['후드티','맨투맨','기모 니트'];
+      const bottomOptions=['조거팬츠','카고팬츠','기모 청바지'];
+      const shoeOptions=['하이탑 스니커즈','패딩 부츠','어글리 슈즈'];
       fallback=[
-        {category:'아우터',name:'롱 패딩',detail:`${mainColor}, 오버핏, 학생 스타일`},
-        {category:'상의',name:'후드티',detail:`${subColor}, 기모, 캐주얼`},
-        {category:'하의',name:'조거팬츠',detail:'블랙, 기모안감'},
-        {category:'신발',name:'하이탑 스니커즈',detail:'화이트'},
-        {category:'소품',name:'비니',detail:mainColor}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 오버핏, 학생 스타일`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}, 기모, 캐주얼`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'블랙, 기모안감'},
+        {category:'신발',name:shoeOptions[styleVariation],detail:'화이트'},
+        {category:'소품',name:['비니','넥워머','귀마개'][styleVariation],detail:mainColor}
       ];
     }else if(userAge<30){
+      const outerChoice=coldOuterOptions[1][styleVariation];
+      const topOptions=['터틀넥 니트','목폴라','케이블 니트'];
+      const bottomOptions=['와이드 슬랙스','스트레이트 팬츠','코듀로이 팬츠'];
+      const shoeOptions=['첼시부츠','워커','레더 앵클부츠'];
       fallback=[
-        {category:'아우터',name:'숏 패딩',detail:`${mainColor}, 슬림핏`},
-        {category:'상의',name:'니트',detail:`${subColor}, 터틀넥`},
-        {category:'하의',name:'와이드 슬랙스',detail:'차콜'},
-        {category:'신발',name:'첼시부츠',detail:'블랙레더'},
-        {category:'소품',name:'머플러',detail:subColor}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 슬림핏`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'차콜'},
+        {category:'신발',name:shoeOptions[styleVariation],detail:'블랙레더'},
+        {category:'소품',name:['머플러','캐시미어 숄','넥워머'][styleVariation],detail:subColor}
       ];
     }else if(userAge<40){
+      const outerChoice=['울 롱코트','캐시미어 코트','더블 코트'][styleVariation];
+      const topOptions=['캐시미어 니트','하이넥 니트','브이넥 니트'];
+      const bottomOptions=['슬랙스','울 팬츠','핀턱 팬츠'];
+      const shoeOptions=['레더 로퍼','옥스포드화','더비슈즈'];
       fallback=[
-        {category:'아우터',name:'울 롱코트',detail:`${mainColor}, 클래식핏`},
-        {category:'상의',name:'캐시미어 니트',detail:`${subColor}`},
-        {category:'하의',name:'슬랙스',detail:'네이비, 울혼방'},
-        {category:'신발',name:'레더 로퍼',detail:'브라운'},
-        {category:'소품',name:'캐시미어 머플러',detail:mainColor}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 클래식핏`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'네이비, 울혼방'},
+        {category:'신발',name:shoeOptions[styleVariation],detail:'브라운'},
+        {category:'소품',name:['캐시미어 머플러','레더 장갑','울 숄'][styleVariation],detail:mainColor}
       ];
     }else{
+      const outerChoice=['캐시미어 코트','울 더블코트','알파카 코트'][styleVariation];
+      const topOptions=['터틀넥 니트','폴로 니트','브이넥 스웨터'];
+      const bottomOptions=['울 팬츠','캐시미어 슬랙스','플리츠 팬츠'];
+      const shoeOptions=['가죽 구두','페니로퍼','몽크스트랩'][styleVariation];
       fallback=[
-        {category:'아우터',name:'캐시미어 코트',detail:`${mainColor}, 프리미엄`},
-        {category:'상의',name:'터틀넥 니트',detail:`${subColor}, 고급소재`},
-        {category:'하의',name:'울 팬츠',detail:'차콜, 편안한 핏'},
-        {category:'신발',name:'가죽 구두',detail:'브라운, 클래식'},
-        {category:'소품',name:'가죽 장갑',detail:mainColor}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 프리미엄`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}, 고급소재`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'차콜, 편안한 핏'},
+        {category:'신발',name:shoeOptions,detail:'브라운, 클래식'},
+        {category:'소품',name:['가죽 장갑','캐시미어 머플러','실크 스카프'][styleVariation],detail:mainColor}
       ];
     }
   }else if(feelsLike<15){
     // 선선한 날씨
     if(userAge<20){
+      const outerChoice=coolOuterOptions[0][styleVariation];
+      const topOptions=['맨투맨','후드집업','오버핏 셔츠'];
+      const bottomOptions=['와이드 데님','카고팬츠','트레이닝 팬츠'];
       fallback=[
-        {category:'아우터',name:'항공점퍼',detail:`${mainColor}, 오버핏`},
-        {category:'상의',name:'맨투맨',detail:`${subColor}, 그래픽`},
-        {category:'하의',name:'와이드 데님',detail:'블루'},
-        {category:'신발',name:'스니커즈',detail:'화이트'},
-        {category:'소품',name:'볼캡',detail:'블랙'}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 오버핏`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}, 그래픽`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'블루'},
+        {category:'신발',name:['스니커즈','컨버스','뉴발란스'][styleVariation],detail:'화이트'},
+        {category:'소품',name:['볼캡','버킷햇','크로스백'][styleVariation],detail:'블랙'}
       ];
     }else if(userAge<30){
+      const outerChoice=coolOuterOptions[1][styleVariation];
+      const topOptions=['셔츠','니트베스트','스트라이프 티'];
+      const bottomOptions=['와이드 팬츠','치노 팬츠','밴딩 슬랙스'];
       fallback=[
-        {category:'아우터',name:'블레이저',detail:`${mainColor}, 오버핏`},
-        {category:'상의',name:'셔츠',detail:`${subColor}, 스트라이프`},
-        {category:'하의',name:'와이드 팬츠',detail:'베이지'},
-        {category:'신발',name:'로퍼',detail:'브라운'},
-        {category:'소품',name:'토트백',detail:mainColor}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 오버핏`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'베이지'},
+        {category:'신발',name:['로퍼','더비슈즈','스니커즈'][styleVariation],detail:'브라운'},
+        {category:'소품',name:['토트백','크로스백','백팩'][styleVariation],detail:mainColor}
       ];
     }else{
+      const outerChoice=coolOuterOptions[2][styleVariation];
+      const topOptions=['셔츠','카라 니트','폴로셔츠'];
+      const bottomOptions=['슬랙스','치노팬츠','울 팬츠'];
       fallback=[
-        {category:'아우터',name:'트렌치코트',detail:`${mainColor}, 클래식`},
-        {category:'상의',name:'셔츠',detail:`${subColor}, 드레스셔츠`},
-        {category:'하의',name:'슬랙스',detail:'네이비'},
-        {category:'신발',name:'레더로퍼',detail:'브라운'},
-        {category:'소품',name:'레더벨트',detail:'브라운'}
+        {category:'아우터',name:outerChoice,detail:`${mainColor}, 클래식`},
+        {category:'상의',name:topOptions[styleVariation],detail:`${subColor}`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:'네이비'},
+        {category:'신발',name:['레더로퍼','몽크스트랩','옥스포드'][styleVariation],detail:'브라운'},
+        {category:'소품',name:['레더벨트','시계','브리프케이스'][styleVariation],detail:'브라운'}
       ];
     }
   }else{
     // 따뜻한 날씨
     if(userAge<20){
+      const topOptions=['오버핏 티셔츠','크롭 티','스트라이프 티'];
+      const bottomOptions=['숏팬츠','와이드 데님','조거팬츠'];
       fallback=[
-        {category:'상의',name:'오버핏 티셔츠',detail:`${mainColor}, 프린트`},
-        {category:'하의',name:'숏팬츠',detail:`${subColor}`},
-        {category:'신발',name:'스니커즈',detail:'화이트'},
-        {category:'소품',name:'볼캡',detail:'블랙'},
-        {category:'가방',name:'크로스백',detail:'블랙'}
+        {category:'상의',name:topOptions[styleVariation],detail:`${mainColor}, 프린트`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:`${subColor}`},
+        {category:'신발',name:['스니커즈','슬리퍼','샌들'][styleVariation],detail:'화이트'},
+        {category:'소품',name:['볼캡','버킷햇','선글라스'][styleVariation],detail:'블랙'},
+        {category:'가방',name:['크로스백','슬링백','미니백'][styleVariation],detail:'블랙'}
       ];
     }else{
+      const topOptions=['린넨 셔츠','폴로셔츠','헨리넥 티'];
+      const bottomOptions=['치노 팬츠','린넨 팬츠','버뮤다 팬츠'];
       fallback=[
-        {category:'상의',name:'린넨 셔츠',detail:`${mainColor}`},
-        {category:'하의',name:'치노 팬츠',detail:`${subColor}`},
-        {category:'신발',name:'로퍼',detail:'브라운'},
-        {category:'소품',name:'선글라스',detail:'블랙'},
-        {category:'가방',name:'토트백',detail:mainColor}
+        {category:'상의',name:topOptions[styleVariation],detail:`${mainColor}`},
+        {category:'하의',name:bottomOptions[styleVariation],detail:`${subColor}`},
+        {category:'신발',name:['로퍼','보트슈즈','에스파드류'][styleVariation],detail:'브라운'},
+        {category:'소품',name:['선글라스','파나마햇','가죽벨트'][styleVariation],detail:'블랙'},
+        {category:'가방',name:['토트백','브리프케이스','숄더백'][styleVariation],detail:mainColor}
       ];
     }
   }
